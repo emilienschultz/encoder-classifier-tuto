@@ -1,5 +1,8 @@
+from gc import collect as gc_collect
 from sklearn.metrics import f1_score, roc_auc_score, accuracy_score
 from torch import Tensor
+from torch.cuda import empty_cache, synchronize, ipc_collect
+from torch.cuda import is_available as cuda_available
 from torch.nn import Sigmoid
 from transformers import EvalPrediction
 import numpy as np
@@ -37,6 +40,15 @@ def compute_metrics(model_output):
     metrics = multi_label_metrics(results_matrix=results_matrix, 
         labels=model_output.label_ids)
     return metrics
+
+def clean_memory():
+  """Flush GPU memory"""
+  empty_cache()
+  if cuda_available():
+      synchronize()
+      ipc_collect()
+  gc_collect()
+  print("Memory flushed")
 
 # ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== ===
 
@@ -113,87 +125,96 @@ num_labels = N_CLASSES
 id2label = {id:label for id, label in enumerate(labels)}
 label2id = {label:id for id, label in enumerate(labels)}
 
+model, tokenizer, dsd = (None,) * 3
+try:
+    model = AutoModelForSequenceClassification.from_pretrained(
+        MODEL_NAME, 
+        num_labels=num_labels,
+        id2label=id2label,
+        label2id=label2id,               
+        problem_type = "multi_label_classification"                   
+    ).to(device=DEVICE)
 
-model = AutoModelForSequenceClassification.from_pretrained(
-    MODEL_NAME, 
-    num_labels=num_labels,
-    id2label=id2label,
-    label2id=label2id,               
-    problem_type = "multi_label_classification"                   
-).to(device=DEVICE)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    # Create a dataset from the splits we created before
+    grouped_ds_split = df_split.groupby("split")
+    dsd = DatasetDict({
+        split :( 
+            Dataset
+            .from_pandas(grouped_ds_split.get_group(split))
+            .with_format("torch", device=DEVICE)#, dtype=int)
+        )
+        for split in ["train", "train_eval", "test", "final_test"]
+    })
 
-# Create a dataset from the splits we created before
-grouped_ds_split = df_split.groupby("split")
-dsd = DatasetDict({
-    split :( 
-        Dataset
-        .from_pandas(grouped_ds_split.get_group(split))
-        .with_format("torch", device=DEVICE)#, dtype=int)
-    )
-    for split in ["train", "train_eval", "test", "final_test"]
-})
-
-tokenizer_parameters = {
-    "truncation":True, 
-    "padding":"max_length",
-    "max_length":400,
-    "return_tensors":"pt"
-}
-
-def preprocess_dataset(row: dict):
-    tokenized_entry = tokenizer(row["text-clean-no-emoji"], **tokenizer_parameters)
-    id_label_as_tensor = Tensor([
-        int(row[label]) for label in labels
-    ])
-    return {
-        **row.copy(),
-        "labels": id_label_as_tensor,
-        "attention_mask" : tokenized_entry["attention_mask"].reshape(-1),
-        "input_ids" : tokenized_entry["input_ids"].reshape(-1)
+    tokenizer_parameters = {
+        "truncation":True, 
+        "padding":"max_length",
+        "max_length":400,
+        "return_tensors":"pt"
     }
 
+    def preprocess_dataset(row: dict):
+        tokenized_entry = tokenizer(row["text-clean-no-emoji"], **tokenizer_parameters)
+        id_label_as_tensor = Tensor([
+            int(row[label]) for label in labels
+        ])
+        return {
+            **row.copy(),
+            "labels": id_label_as_tensor,
+            "attention_mask" : tokenized_entry["attention_mask"].reshape(-1),
+            "input_ids" : tokenized_entry["input_ids"].reshape(-1)
+        }
 
-dsd = dsd.map(preprocess_dataset, batch_size=32)
 
-from transformers import TrainingArguments, Trainer, DataCollatorWithPadding
+    dsd = dsd.map(preprocess_dataset, batch_size=32)
+
+    from transformers import TrainingArguments, Trainer, DataCollatorWithPadding
 
 
-training_arguments = TrainingArguments(
-    # Hyperparameters
-    # num_train_epochs = 5,
-    num_train_epochs = 7,
-    learning_rate = 5e-5,
-    weight_decay  = 0.0,
-    warmup_ratio  = 0.0,
-    optim = "adamw_torch_fused",
-    # Second order hyperparameters
-    per_device_train_batch_size = 4,
-    per_device_eval_batch_size = 4,
-    gradient_accumulation_steps = 8,
-    # Pipe
-    output_dir = "./models/training",
-    overwrite_output_dir=True,
-    
-    logging_strategy = "epoch",
-    # eval_strategy = "epoch",
-    eval_strategy = "steps",
-    eval_steps = 32,
-    save_strategy = "epoch",
-    # load_best_model_at_end = True,
-    # save_total_limit = 5 + 1,
+    training_arguments = TrainingArguments(
+        # Hyperparameters
+        # num_train_epochs = 5,
+        num_train_epochs = 7,
+        learning_rate = 5e-5,
+        weight_decay  = 0.0,
+        warmup_ratio  = 0.0,
+        optim = "adamw_torch_fused",
+        # Second order hyperparameters
+        per_device_train_batch_size = 4,
+        per_device_eval_batch_size = 4,
+        gradient_accumulation_steps = 8,
+        # Pipe
+        output_dir = "./models/training",
+        overwrite_output_dir=True,
+        
+        logging_strategy = "epoch",
+        # eval_strategy = "epoch",
+        eval_strategy = "steps",
+        eval_steps = 32,
+        save_strategy = "epoch",
+        # load_best_model_at_end = True,
+        # save_total_limit = 5 + 1,
 
-    disable_tqdm = False,
-)
+        disable_tqdm = False,
+    )
 
-trainer = Trainer(
-    model = model, 
-    args = training_arguments,
-    train_dataset=dsd["train"],
-    eval_dataset=dsd["train_eval"],
-    compute_metrics = compute_metrics
-)
+    trainer = Trainer(
+        model = model, 
+        args = training_arguments,
+        train_dataset=dsd["train"],
+        eval_dataset=dsd["train_eval"],
+        compute_metrics = compute_metrics
+    )
 
-trainer.train()
-# WARNING MODEL switches to mps need to handle that
+    trainer.train()
+    # WARNING MODEL switches to mps need to handle that
+except Exception as e:
+    print("# ERROR" + "#" * 93)
+    print(e)
+    print("#" * 100)
+
+finally:
+    del tokenizer, model, dsd, trainer # All objects that are moved to the GPU
+    clean_memory()
