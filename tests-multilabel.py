@@ -61,6 +61,7 @@ from torch import Tensor
 RANDOM_SEED = 2306406
 DATA_PATH = "./data/multilabel_classification_biotech_event.csv"
 MODEL_NAME = "google-bert/bert-base-uncased"
+MAX_LENGTH = 512
 N_CLASSES = 4
 CLASSES = [
     'loneliness', 
@@ -151,7 +152,7 @@ try:
     tokenizer_parameters = {
         "truncation":True, 
         "padding":"max_length",
-        "max_length":400,
+        "max_length":MAX_LENGTH,
         "return_tensors":"pt"
     }
 
