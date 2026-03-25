@@ -8,7 +8,7 @@ data/osfstorage-archive/
 */.ipynb_checkpoints/*
 
 **/models/*/
-outputs/*/
+**/outputs/*/
 /.quarto/
 _site/
 
