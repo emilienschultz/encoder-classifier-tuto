@@ -34,7 +34,11 @@ for label in CLASSES:
         device_batch_size = DEVICE_BATCH_SIZE, 
         device = DEVICE, 
         tokenizer_max_length = MAX_LENGTH,
-        additional_training_arguments={"num_train_epochs" : 5}
+        additional_training_arguments={
+            "num_train_epochs" : 5,
+            "gradient_accumulation_steps" : 2,
+            "fp16" : True,
+        }
     )
     print(pipe)
     dsd = pipe.tokenize(dsd)
