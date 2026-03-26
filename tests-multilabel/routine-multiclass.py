@@ -19,7 +19,7 @@ CLASSES = [
     'brain dysfunction (forget)', 
     'anger'
 ]
-DEVICE = "cpu"
+DEVICE = "cuda"
 DEVICE_BATCH_SIZE = 8
 TEXT_COLUMN = "text-clean-no-emoji"
 
