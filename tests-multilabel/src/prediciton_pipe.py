@@ -37,8 +37,10 @@ class PredictionPipe:
                 local_id += batch["id"]
 
                 texts = batch[self.__text_column]
+                model_input = self.__tokenizer(texts, **self.__tokenizer_parameters)
+                print(model_input)
                 logits : np.ndarray = (
-                    self.__model(**self.__tokenizer(texts, **self.__tokenizer_parameters))
+                    self.__model(**model_input)
                     .logits
                     .detach()
                     .numpy()
