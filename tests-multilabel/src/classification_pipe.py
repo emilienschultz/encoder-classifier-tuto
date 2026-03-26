@@ -122,12 +122,12 @@ class ClassificationPipe:
                 "input_ids" : tokenized_entry["input_ids"].reshape(-1)
             }
 
-        dsd = dsd.map(preprocess_dataset, batch_size=32)
-        
         for split in dsd:
             dsd[split] = dsd[split].with_format("torch", device=self.__device)
             if test_mode:
                 dsd[split] = dsd[split].select(range(20))
+
+        dsd = dsd.map(preprocess_dataset, batch_size=32)
 
         return dsd
     

@@ -20,6 +20,7 @@ class PredictionPipe:
         self.__device_batch_size = device_batch_size
         self.__text_column = text_column
         self.__labels = labels
+        print(self.__labels)
         self.__tokenizer_parameters = tokenizer_parameters
 
         self.__tokenizer = AutoTokenizer.from_pretrained(model_name)
