@@ -25,7 +25,7 @@ TEXT_COLUMN = "text-clean-no-emoji"
 
 
 pipe, dsd = None, None
-for n_classes in range(2, len(CLASSES)): 
+for n_classes in range(2, len(CLASSES) + 1): 
     output_dir = f"./models/multilabel-top-{n_classes}"
 
     dsd = load_from_disk("./data/multi-label-split/")
